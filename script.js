@@ -2363,11 +2363,11 @@ class NetworkManager {
         if (!this.isHost) {
           startGame(data.stage || selectedStage, false);
         }
-      } else if (data.type === 'MOVE') {
+      } else if (data.type === 'P2_MOVE' || data.type === 'MOVE') {
         if (this.isHost) {
           handleHostReceiveMove(data.direction);
         }
-      } else if (data.type === 'FIRE') {
+      } else if (data.type === 'P2_SHOOT' || data.type === 'FIRE') {
         if (this.isHost) {
           handleHostReceiveFire();
         }
@@ -2476,46 +2476,52 @@ function handleHostReceiveMove(direction) {
   if (!window.p2RemoteInput) {
     window.p2RemoteInput = { up: false, down: false, left: false, right: false, fire: false };
   }
+  if (window.engine && !window.engine.player2) {
+    window.engine.spawnPlayer(2);
+  }
   const dirUpper = (direction || '').toUpperCase();
+  const p2 = window.engine ? window.engine.player2 : null;
+  const isP2Alive = p2 && (p2.health === undefined || p2.health > 0);
+
   if (dirUpper === 'UP') {
     window.p2RemoteInput.up = true;
     window.p2RemoteInput.down = false;
     window.p2RemoteInput.left = false;
     window.p2RemoteInput.right = false;
-    if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
-      window.engine.player2.direction = 'UP';
-      window.engine.moveTank(window.engine.player2, 0, -window.engine.player2.speed);
-      window.engine.player2.trackFrame = (window.engine.player2.trackFrame + 1) % 2;
+    if (isP2Alive) {
+      p2.direction = 'UP';
+      window.engine.moveTank(p2, 0, -p2.speed);
+      p2.trackFrame = (p2.trackFrame + 1) % 2;
     }
   } else if (dirUpper === 'DOWN') {
     window.p2RemoteInput.up = false;
     window.p2RemoteInput.down = true;
     window.p2RemoteInput.left = false;
     window.p2RemoteInput.right = false;
-    if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
-      window.engine.player2.direction = 'DOWN';
-      window.engine.moveTank(window.engine.player2, 0, window.engine.player2.speed);
-      window.engine.player2.trackFrame = (window.engine.player2.trackFrame + 1) % 2;
+    if (isP2Alive) {
+      p2.direction = 'DOWN';
+      window.engine.moveTank(p2, 0, p2.speed);
+      p2.trackFrame = (p2.trackFrame + 1) % 2;
     }
   } else if (dirUpper === 'LEFT') {
     window.p2RemoteInput.up = false;
     window.p2RemoteInput.down = false;
     window.p2RemoteInput.left = true;
     window.p2RemoteInput.right = false;
-    if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
-      window.engine.player2.direction = 'LEFT';
-      window.engine.moveTank(window.engine.player2, -window.engine.player2.speed, 0);
-      window.engine.player2.trackFrame = (window.engine.player2.trackFrame + 1) % 2;
+    if (isP2Alive) {
+      p2.direction = 'LEFT';
+      window.engine.moveTank(p2, -p2.speed, 0);
+      p2.trackFrame = (p2.trackFrame + 1) % 2;
     }
   } else if (dirUpper === 'RIGHT') {
     window.p2RemoteInput.up = false;
     window.p2RemoteInput.down = false;
     window.p2RemoteInput.left = false;
     window.p2RemoteInput.right = true;
-    if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
-      window.engine.player2.direction = 'RIGHT';
-      window.engine.moveTank(window.engine.player2, window.engine.player2.speed, 0);
-      window.engine.player2.trackFrame = (window.engine.player2.trackFrame + 1) % 2;
+    if (isP2Alive) {
+      p2.direction = 'RIGHT';
+      window.engine.moveTank(p2, p2.speed, 0);
+      p2.trackFrame = (p2.trackFrame + 1) % 2;
     }
   } else if (dirUpper === 'STOP' || dirUpper === 'NONE' || !dirUpper) {
     window.p2RemoteInput.up = false;
@@ -2530,10 +2536,14 @@ function handleHostReceiveFire() {
     window.p2RemoteInput = { up: false, down: false, left: false, right: false, fire: false };
   }
   window.p2RemoteInput.fire = true;
-  if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
-    const p2Bullets = window.engine.bullets.filter(b => b.shooterId === 'player2').length;
-    if (p2Bullets === 0) {
-      window.engine.fireBullet(window.engine.player2);
+  if (window.engine) {
+    if (!window.engine.player2) window.engine.spawnPlayer(2);
+    const p2 = window.engine.player2;
+    if (p2 && (p2.health === undefined || p2.health > 0)) {
+      const p2Bullets = window.engine.bullets.filter(b => b.shooterId === 'player2').length;
+      if (p2Bullets === 0) {
+        window.engine.fireBullet(p2);
+      }
     }
   }
 }
@@ -3061,15 +3071,30 @@ function gameLoop() {
         }
       } else if (userRole === 'JOIN') {
         // Client Loop: continuous input stream to Host
-        if (localInput.up) netManager.send({ type: 'MOVE', direction: 'UP' });
-        else if (localInput.down) netManager.send({ type: 'MOVE', direction: 'DOWN' });
-        else if (localInput.left) netManager.send({ type: 'MOVE', direction: 'LEFT' });
-        else if (localInput.right) netManager.send({ type: 'MOVE', direction: 'RIGHT' });
-        if (localInput.fire) netManager.send({ type: 'FIRE' });
-        netManager.send({
-          type: 'P2_INPUT',
-          input: localInput,
-        });
+        const conn = netManager ? netManager.conn : null;
+        if (conn && conn.open) {
+          let currentDirection = null;
+          if (localInput.up) currentDirection = 'UP';
+          else if (localInput.down) currentDirection = 'DOWN';
+          else if (localInput.left) currentDirection = 'LEFT';
+          else if (localInput.right) currentDirection = 'RIGHT';
+
+          if (currentDirection) {
+            conn.send({ type: 'P2_MOVE', direction: currentDirection });
+            conn.send({ type: 'MOVE', direction: currentDirection });
+          } else {
+            conn.send({ type: 'P2_MOVE', direction: 'STOP' });
+            conn.send({ type: 'MOVE', direction: 'STOP' });
+          }
+          if (localInput.fire) {
+            conn.send({ type: 'P2_SHOOT' });
+            conn.send({ type: 'FIRE' });
+          }
+          conn.send({
+            type: 'P2_INPUT',
+            input: localInput,
+          });
+        }
       }
 
       if (frameCount % 6 === 0) {
@@ -3102,12 +3127,23 @@ function gameLoop() {
 // Keyboard and Touch setup
 function setupEventListeners() {
   const sendClientMoveOrStop = () => {
-    if (userRole === 'JOIN' && netManager && netManager.isConnected) {
-      if (localInput.up) netManager.send({ type: 'MOVE', direction: 'UP' });
-      else if (localInput.down) netManager.send({ type: 'MOVE', direction: 'DOWN' });
-      else if (localInput.left) netManager.send({ type: 'MOVE', direction: 'LEFT' });
-      else if (localInput.right) netManager.send({ type: 'MOVE', direction: 'RIGHT' });
-      else netManager.send({ type: 'MOVE', direction: 'STOP' });
+    if (userRole === 'JOIN' && netManager) {
+      const conn = netManager.conn;
+      if (conn && conn.open) {
+        let currentDirection = null;
+        if (localInput.up) currentDirection = 'UP';
+        else if (localInput.down) currentDirection = 'DOWN';
+        else if (localInput.left) currentDirection = 'LEFT';
+        else if (localInput.right) currentDirection = 'RIGHT';
+
+        if (currentDirection) {
+          conn.send({ type: 'P2_MOVE', direction: currentDirection });
+          conn.send({ type: 'MOVE', direction: currentDirection });
+        } else {
+          conn.send({ type: 'P2_MOVE', direction: 'STOP' });
+          conn.send({ type: 'MOVE', direction: 'STOP' });
+        }
+      }
     }
   };
 
@@ -3115,28 +3151,41 @@ function setupEventListeners() {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
       e.preventDefault();
     }
+    let currentDirection = null;
     if (e.code === 'ArrowUp' || e.code === 'KeyW') {
       localInput.up = true; localInput.down = false; localInput.left = false; localInput.right = false;
-      if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'UP' });
+      currentDirection = 'UP';
     } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
       localInput.down = true; localInput.up = false; localInput.left = false; localInput.right = false;
-      if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'DOWN' });
+      currentDirection = 'DOWN';
     } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
       localInput.left = true; localInput.right = false; localInput.up = false; localInput.down = false;
-      if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'LEFT' });
+      currentDirection = 'LEFT';
     } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
       localInput.right = true; localInput.left = false; localInput.up = false; localInput.down = false;
-      if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'RIGHT' });
+      currentDirection = 'RIGHT';
     } else if (e.code === 'Space') {
       if (!localInput.fire) {
         localInput.fire = true;
-        if (userRole === 'JOIN') {
-          netManager.send({ type: 'FIRE' });
+        if (userRole === 'JOIN' && netManager) {
+          const conn = netManager.conn;
+          if (conn && conn.open) {
+            conn.send({ type: 'P2_SHOOT' });
+            conn.send({ type: 'FIRE' });
+          }
           sounds.playShoot(2);
         }
       }
     } else if (e.code === 'KeyP') togglePause();
     else if (e.code === 'KeyM') toggleMuteUI();
+
+    if (currentDirection && userRole === 'JOIN' && netManager) {
+      const conn = netManager.conn;
+      if (conn && conn.open) {
+        conn.send({ type: 'P2_MOVE', direction: currentDirection });
+        conn.send({ type: 'MOVE', direction: currentDirection });
+      }
+    }
   });
 
   window.addEventListener('keyup', (e) => {
@@ -3154,8 +3203,11 @@ function setupEventListeners() {
       sendClientMoveOrStop();
     } else if (e.code === 'Space') {
       localInput.fire = false;
-      if (userRole === 'JOIN') {
-        netManager.send({ type: 'FIRE_RELEASE' });
+      if (userRole === 'JOIN' && netManager) {
+        const conn = netManager.conn;
+        if (conn && conn.open) {
+          conn.send({ type: 'FIRE_RELEASE' });
+        }
       }
     }
   });
@@ -3184,41 +3236,74 @@ function setupEventListeners() {
 
   setupTouchBtn('btnTouchUp', () => {
     localInput.up = true; localInput.down = false; localInput.left = false; localInput.right = false;
-    if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'UP' });
+    if (userRole === 'JOIN' && netManager) {
+      const conn = netManager.conn;
+      if (conn && conn.open) {
+        conn.send({ type: 'P2_MOVE', direction: 'UP' });
+        conn.send({ type: 'MOVE', direction: 'UP' });
+      }
+    }
   }, () => {
     localInput.up = false;
     sendClientMoveOrStop();
   });
   setupTouchBtn('btnTouchDown', () => {
     localInput.down = true; localInput.up = false; localInput.left = false; localInput.right = false;
-    if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'DOWN' });
+    if (userRole === 'JOIN' && netManager) {
+      const conn = netManager.conn;
+      if (conn && conn.open) {
+        conn.send({ type: 'P2_MOVE', direction: 'DOWN' });
+        conn.send({ type: 'MOVE', direction: 'DOWN' });
+      }
+    }
   }, () => {
     localInput.down = false;
     sendClientMoveOrStop();
   });
   setupTouchBtn('btnTouchLeft', () => {
     localInput.left = true; localInput.right = false; localInput.up = false; localInput.down = false;
-    if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'LEFT' });
+    if (userRole === 'JOIN' && netManager) {
+      const conn = netManager.conn;
+      if (conn && conn.open) {
+        conn.send({ type: 'P2_MOVE', direction: 'LEFT' });
+        conn.send({ type: 'MOVE', direction: 'LEFT' });
+      }
+    }
   }, () => {
     localInput.left = false;
     sendClientMoveOrStop();
   });
   setupTouchBtn('btnTouchRight', () => {
     localInput.right = true; localInput.left = false; localInput.up = false; localInput.down = false;
-    if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'RIGHT' });
+    if (userRole === 'JOIN' && netManager) {
+      const conn = netManager.conn;
+      if (conn && conn.open) {
+        conn.send({ type: 'P2_MOVE', direction: 'RIGHT' });
+        conn.send({ type: 'MOVE', direction: 'RIGHT' });
+      }
+    }
   }, () => {
     localInput.right = false;
     sendClientMoveOrStop();
   });
   setupTouchBtn('btnTouchFire', () => {
     localInput.fire = true;
-    if (userRole === 'JOIN') {
-      netManager.send({ type: 'FIRE' });
+    if (userRole === 'JOIN' && netManager) {
+      const conn = netManager.conn;
+      if (conn && conn.open) {
+        conn.send({ type: 'P2_SHOOT' });
+        conn.send({ type: 'FIRE' });
+      }
       sounds.playShoot(2);
     }
   }, () => {
     localInput.fire = false;
-    if (userRole === 'JOIN') netManager.send({ type: 'FIRE_RELEASE' });
+    if (userRole === 'JOIN' && netManager) {
+      const conn = netManager.conn;
+      if (conn && conn.open) {
+        conn.send({ type: 'FIRE_RELEASE' });
+      }
+    }
   });
 
   // Tab switching
