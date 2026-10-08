@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+
+  canvas {
+    /* High quality crisp rendering without nearest-neighbor downsampling artifacts */
+    image-rendering: auto;
+    image-rendering: -webkit-optimize-contrast;
+  }
+}
