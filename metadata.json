@@ -2,5 +2,7 @@
   "name": "Battle City 1990 - Xe Tăng 4 Nút",
   "description": "Trò chơi bắn xe tăng 2D kinh điển Battle City phong cách NES 4 nút, đồ họa pixel mượt mà, đại bản doanh đại bàng, kẻ địch thông minh và hiệu ứng âm thanh 8-bit hoài niệm.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

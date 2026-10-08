@@ -12,10 +12,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
-    <!-- Tailwind CSS CDN for instant, zero-build modern styling on GitHub Pages and static hosts -->
+    <!-- Tailwind CSS CDN for instant styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Canvas Confetti for victory celebration -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+    <!-- PeerJS CDN for P2P WebRTC Realtime Multiplayer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <style>
       body {
         user-select: none;
@@ -25,6 +27,9 @@
       canvas {
         image-rendering: auto;
         image-rendering: -webkit-optimize-contrast;
+      }
+      .font-arcade {
+        font-family: 'Press Start 2P', monospace, sans-serif;
       }
     </style>
   </head>
@@ -36,26 +41,37 @@
         <div class="w-6 h-6 rounded-xs bg-amber-500 flex items-center justify-center text-zinc-950 font-black text-xs shadow-sm">
           ▲
         </div>
-        <span class="font-mono font-bold tracking-tight text-white text-base">
-          Battle City 1990
-        </span>
+        <div class="flex items-center gap-2">
+          <span class="font-mono font-bold tracking-tight text-white text-base">
+            Battle City 1990
+          </span>
+          <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            2P ONLINE
+          </span>
+        </div>
       </div>
 
       <!-- Zone 2: Navigation Links -->
       <nav class="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-zinc-400">
-        <button id="navArena" class="hover:text-amber-400 transition-colors cursor-pointer">
-          Đấu Trường
+        <button id="navLobby" class="hover:text-amber-400 transition-colors cursor-pointer flex items-center gap-1">
+          <span>👥</span> Sảnh Chờ (Lobby)
         </button>
-        <button id="navHelp" class="hover:text-amber-400 transition-colors cursor-pointer">
-          Luật Chơi & Phím Tắt
+        <button id="navHelp" class="hover:text-amber-400 transition-colors cursor-pointer flex items-center gap-1">
+          <span>📖</span> Luật Chơi & Phím Tắt
         </button>
-        <button id="navChangeStage" class="hover:text-amber-400 transition-colors cursor-pointer">
-          Đổi Màn (Chuyển Màn Tiếp)
+        <button id="navChangeStage" class="hover:text-amber-400 transition-colors cursor-pointer flex items-center gap-1">
+          <span>🚩</span> Đổi Màn Tiếp
         </button>
       </nav>
 
-      <!-- Zone 3: Header Actions -->
+      <!-- Zone 3: Header Actions & Network Status -->
       <div class="flex items-center gap-2">
+        <!-- Room Status Badge in Header -->
+        <div id="headerNetBadge" class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
+          <span id="headerNetDot" class="w-2 h-2 rounded-full bg-zinc-600"></span>
+          <span id="headerNetText">Solo</span>
+        </div>
+
         <button
           id="btnToggleCrt"
           title="Bật/Tắt hiệu ứng màn hình CRT cổ điển"
@@ -99,75 +115,164 @@
               </div>
             </div>
 
-            <!-- Title Screen Overlay -->
-            <div id="titleScreen" class="absolute inset-0 bg-zinc-950/95 flex flex-col items-center justify-center p-4 sm:p-6 z-40 text-center">
-              <div class="max-w-lg w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-                <div class="relative mb-6">
+            <!-- Title Screen / Lobby UI Overlay -->
+            <div id="titleScreen" class="absolute inset-0 bg-zinc-950/95 flex flex-col items-center justify-center p-3 sm:p-5 z-40 text-center overflow-y-auto">
+              <div class="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-2xl relative">
+                <!-- Arcade Title Header -->
+                <div class="relative mb-4">
                   <div class="text-[10px] tracking-widest text-amber-500 uppercase font-mono mb-1">
-                    NES CLASSIC ARCADE 1990
+                    NES CLASSIC ARCADE 1990 • 2 PLAYERS CO-OP
                   </div>
-                  <h1 class="text-3xl sm:text-4xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-amber-300 via-amber-500 to-red-600 drop-shadow-[0_4px_8px_rgba(234,179,8,0.3)]">
+                  <h1 class="text-2xl sm:text-3xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-amber-300 via-amber-500 to-red-600 drop-shadow-[0_4px_8px_rgba(234,179,8,0.3)]">
                     BATTLE CITY
                   </h1>
-                  <div class="text-xs sm:text-sm font-semibold text-zinc-400 mt-1 font-mono">
-                    XE TĂNG 4 NÚT HUYỀN THOẠI
+                  <div class="text-xs font-semibold text-zinc-400 mt-0.5 font-mono">
+                    ĐỒNG ĐỘI BẮN XE TĂNG QUA MẠNG P2P
                   </div>
                 </div>
 
-                <!-- High Score Banner -->
-                <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-300 mb-6">
-                  <span>🏆 KỶ LỤC HI-SCORE:</span>
-                  <span id="titleHighScore" class="text-amber-400 font-bold tabular-nums">0</span>
+                <!-- Mode Selection Tabs -->
+                <div class="grid grid-cols-3 gap-1.5 p-1 bg-zinc-950 rounded-xl border border-zinc-800 mb-4 font-mono text-xs">
+                  <button id="tabHost" type="button" class="py-2 px-2 rounded-lg font-bold transition-all bg-amber-500 text-zinc-950 shadow-sm cursor-pointer">
+                    👑 Tạo Phòng
+                  </button>
+                  <button id="tabJoin" type="button" class="py-2 px-2 rounded-lg font-bold transition-all text-zinc-400 hover:text-white cursor-pointer">
+                    🎮 Vào Phòng
+                  </button>
+                  <button id="tabSolo" type="button" class="py-2 px-2 rounded-lg font-bold transition-all text-zinc-400 hover:text-white cursor-pointer">
+                    👤 Chơi Đơn
+                  </button>
                 </div>
 
-                <!-- Stage Selection -->
-                <div class="mb-6">
-                  <div class="text-xs font-medium text-zinc-400 mb-2 font-mono">CHỌN MÀN CHƠI (STAGE):</div>
-                  <div class="flex justify-center gap-2">
-                    <button id="btnStage1" type="button" class="py-2 px-4 rounded-xl text-xs font-mono font-bold bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/20 scale-105 cursor-pointer">
-                      STAGE 1
-                    </button>
-                    <button id="btnStage2" type="button" class="py-2 px-4 rounded-xl text-xs font-mono font-bold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 cursor-pointer">
-                      STAGE 2
-                    </button>
-                    <button id="btnStage3" type="button" class="py-2 px-4 rounded-xl text-xs font-mono font-bold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 cursor-pointer">
-                      STAGE 3
-                    </button>
+                <!-- TAB 1: HOST PANEL (TẠO PHÒNG - XE VÀNG) -->
+                <div id="panelHost" class="space-y-3.5 text-left font-mono">
+                  <div class="p-3.5 bg-zinc-950 rounded-xl border border-zinc-800/80 space-y-2.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <span class="text-zinc-400">MÃ PHÒNG (ROOM ID):</span>
+                      <span class="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                        XE VÀNG (P1)
+                      </span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <div id="roomCodeDisplay" class="flex-1 py-2 px-3 bg-zinc-900 border-2 border-amber-500/60 rounded-xl text-center text-2xl font-black text-amber-400 tracking-widest font-mono select-all">
+                        ----
+                      </div>
+                      <button
+                        id="btnCopyCode"
+                        type="button"
+                        class="py-2.5 px-3.5 bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-200 text-xs font-bold rounded-xl border border-zinc-700 flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Sao chép mã phòng 4 số"
+                      >
+                        <span id="copyIcon">📋</span>
+                        <span id="copyText">Sao chép</span>
+                      </button>
+                    </div>
+
+                    <p class="text-[11px] text-zinc-400 leading-normal">
+                      💡 Gửi mã 4 chữ số này cho bạn bè để cùng vào chiến đấu bảo vệ Đại Bản Doanh!
+                    </p>
                   </div>
+
+                  <!-- Host Peer Status Indicator -->
+                  <div id="hostStatusBox" class="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs flex items-center gap-2">
+                    <span id="hostStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span id="hostStatusMsg" class="text-zinc-300 text-[11px]">Đang khởi tạo mã phòng PeerJS...</span>
+                  </div>
+
+                  <!-- Stage Select for Host -->
+                  <div>
+                    <div class="text-[11px] font-medium text-zinc-400 mb-1.5">CHỌN MÀN CHƠI (STAGE):</div>
+                    <div class="flex justify-center gap-2">
+                      <button id="btnHostStage1" type="button" class="py-1.5 px-3 rounded-lg text-xs font-bold bg-amber-500 text-zinc-950 cursor-pointer">Màn 1</button>
+                      <button id="btnHostStage2" type="button" class="py-1.5 px-3 rounded-lg text-xs font-bold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 cursor-pointer">Màn 2</button>
+                      <button id="btnHostStage3" type="button" class="py-1.5 px-3 rounded-lg text-xs font-bold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 cursor-pointer">Màn 3</button>
+                    </div>
+                  </div>
+
+                  <!-- Host Start Button -->
+                  <button
+                    id="btnHostStart"
+                    type="button"
+                    class="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 font-black tracking-wider rounded-xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer text-xs"
+                  >
+                    <span>▶ BẮT ĐẦU VÀO TRẬN (HOST P1)</span>
+                  </button>
                 </div>
 
-                <!-- Rules Briefing -->
-                <div class="text-left bg-zinc-950 p-3.5 rounded-xl border border-zinc-800/80 mb-6 space-y-2 text-xs text-zinc-300 font-mono">
-                  <div class="flex items-center gap-2">
-                    <span class="text-amber-400 font-bold">1.</span>
-                    <span>Bảo vệ <strong class="text-amber-300">Đại Bản Doanh Đại Bàng</strong> ở phía dưới bản đồ!</span>
+                <!-- TAB 2: JOIN PANEL (VÀO PHÒNG - XE XANH) -->
+                <div id="panelJoin" class="hidden space-y-3.5 text-left font-mono">
+                  <div class="p-3.5 bg-zinc-950 rounded-xl border border-zinc-800/80 space-y-2.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <span class="text-zinc-400">NHẬP MÃ PHÒNG (4 CHỮ SỐ):</span>
+                      <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        XE XANH (P2)
+                      </span>
+                    </div>
+
+                    <input
+                      id="inputJoinCode"
+                      type="text"
+                      maxlength="8"
+                      placeholder="VD: 5821"
+                      class="w-full py-2.5 px-3 bg-zinc-900 border-2 border-zinc-700 focus:border-emerald-500 rounded-xl text-center text-xl font-black text-white tracking-widest font-mono uppercase focus:outline-none placeholder:text-zinc-600"
+                    />
+
+                    <p class="text-[11px] text-zinc-400 leading-normal">
+                      Nhập mã phòng bạn bè gửi rồi nhấn "Vào phòng" để điều khiển <strong>Xe Tăng 2 (Màu Xanh)</strong>.
+                    </p>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-amber-400 font-bold">2.</span>
-                    <span>Đạn phá được <span class="text-red-400">tường gạch đỏ</span>, nhưng nảy tắt khi gặp <span class="text-slate-300">thép xám</span>.</span>
+
+                  <!-- Join Peer Status Indicator -->
+                  <div id="joinStatusBox" class="hidden p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs flex items-center gap-2">
+                    <span id="joinStatusDot" class="w-2.5 h-2.5 rounded-full bg-zinc-500"></span>
+                    <span id="joinStatusMsg" class="text-zinc-300 text-[11px]">Chưa kết nối</span>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-amber-400 font-bold">3.</span>
-                    <span>Giới hạn nghiêm ngặt: <strong class="text-white">chỉ 1 viên đạn</strong> trên sân cùng lúc (đạn nổ mới bắn tiếp).</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-amber-400 font-bold">4.</span>
-                    <span>Phím mũi tên / WASD để đi, SPACE để bắn (hoặc dùng nút cảm ứng).</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-amber-400 font-bold">5.</span>
-                    <span>Hạ xe đỏ nhấp nháy nhận: ⛏️ <span class="text-slate-300">Xẻng</span> (thép bảo vệ đại bàng 10s), ★ <span class="text-amber-300">Ngôi sao</span> (tăng tốc đạn), 💣 <span class="text-red-400">Lựu đạn</span> (diệt sạch địch), 🛡️ <span class="text-cyan-400">Khiên</span> (bất tử 5s).</span>
-                  </div>
+
+                  <!-- Join Connect Button -->
+                  <button
+                    id="btnJoinSubmit"
+                    type="button"
+                    class="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-zinc-950 font-black tracking-wider rounded-xl shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer text-xs"
+                  >
+                    <span>🔗 KẾT NỐI VÀO PHÒNG (P2 XE XANH)</span>
+                  </button>
                 </div>
 
-                <!-- Start Button -->
-                <button
-                  id="btnStartGame"
-                  type="button"
-                  class="w-full py-3.5 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 font-black font-mono tracking-wider rounded-xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 transition-all active:scale-98 cursor-pointer text-sm"
-                >
-                  <span>▶ VÀO TRẬN (START GAME)</span>
-                </button>
+                <!-- TAB 3: SOLO PANEL (CHƠI 1 NGƯỜI) -->
+                <div id="panelSolo" class="hidden space-y-3.5 text-left font-mono">
+                  <div class="p-3.5 bg-zinc-950 rounded-xl border border-zinc-800/80 space-y-2">
+                    <div class="text-xs text-zinc-300 font-bold">CHẾ ĐỘ CHƠI ĐƠN CỔ ĐIỂN</div>
+                    <p class="text-[11px] text-zinc-400 leading-normal">
+                      Chiến đấu một mình bảo vệ Đại Bản Doanh và hạ gục 20 xe tăng địch.
+                    </p>
+                  </div>
+
+                  <div>
+                    <div class="text-[11px] font-medium text-zinc-400 mb-1.5">CHỌN MÀN CHƠI:</div>
+                    <div class="flex justify-center gap-2">
+                      <button id="btnSoloStage1" type="button" class="py-1.5 px-3 rounded-lg text-xs font-bold bg-amber-500 text-zinc-950 cursor-pointer">Màn 1</button>
+                      <button id="btnSoloStage2" type="button" class="py-1.5 px-3 rounded-lg text-xs font-bold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 cursor-pointer">Màn 2</button>
+                      <button id="btnSoloStage3" type="button" class="py-1.5 px-3 rounded-lg text-xs font-bold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 cursor-pointer">Màn 3</button>
+                    </div>
+                  </div>
+
+                  <button
+                    id="btnSoloStart"
+                    type="button"
+                    class="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 font-black tracking-wider rounded-xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer text-xs"
+                  >
+                    <span>▶ BẮT ĐẦU CHƠI ĐƠN</span>
+                  </button>
+                </div>
+
+                <!-- Hi-Score & Rules brief -->
+                <div class="mt-4 pt-3 border-t border-zinc-800 flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                  <span>🏆 Kỷ lục: <strong id="titleHighScore" class="text-amber-400">0</strong></span>
+                  <button id="btnTitleHelp" type="button" class="hover:text-amber-400 underline cursor-pointer">
+                    Xem luật chơi
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -208,11 +313,11 @@
                 </div>
 
                 <!-- Action Buttons -->
-                <div class="space-y-2.5">
+                <div class="space-y-2.5 font-mono">
                   <button
                     id="btnModalNext"
                     type="button"
-                    class="w-full py-3 px-4 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold font-mono rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer text-sm"
+                    class="w-full py-3 px-4 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer text-sm"
                   >
                     <span>TIẾP TỤC MÀN TIẾP THEO</span>
                     <span>▶</span>
@@ -221,10 +326,19 @@
                   <button
                     id="btnModalRestart"
                     type="button"
-                    class="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold font-mono rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition-all cursor-pointer text-sm"
+                    class="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold rounded-xl border border-zinc-700 flex items-center justify-center gap-2 transition-all cursor-pointer text-sm"
                   >
                     <span>↺</span>
                     <span>CHƠI LẠI TRẬN NÀY</span>
+                  </button>
+
+                  <button
+                    id="btnModalLobby"
+                    type="button"
+                    class="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-medium rounded-xl border border-zinc-800 flex items-center justify-center gap-1.5 transition-all cursor-pointer text-xs"
+                  >
+                    <span>👥</span>
+                    <span>VỀ SẢNH CHỜ (LOBBY)</span>
                   </button>
                 </div>
               </div>
@@ -242,37 +356,63 @@
           <!-- Desktop Control Hints -->
           <div class="mt-2.5 text-[11px] font-mono text-zinc-400 text-center hidden sm:flex items-center gap-4">
             <span>Di chuyển: <kbd class="px-1.5 py-0.5 bg-zinc-800 rounded border border-zinc-700 text-zinc-300">WASD</kbd> / <kbd class="px-1.5 py-0.5 bg-zinc-800 rounded border border-zinc-700 text-zinc-300">Mũi tên</kbd></span>
-            <span>Bắn đạn: <kbd class="px-1.5 py-0.5 bg-zinc-800 rounded border border-zinc-700 text-zinc-300">SPACE</kbd></span>
+            <span>Bắn: <kbd class="px-1.5 py-0.5 bg-zinc-800 rounded border border-zinc-700 text-zinc-300">SPACE</kbd></span>
             <span>Tạm dừng: <kbd class="px-1.5 py-0.5 bg-zinc-800 rounded border border-zinc-700 text-zinc-300">P</kbd></span>
           </div>
         </div>
 
         <!-- HUD Side Panel -->
-        <aside class="w-full max-w-[520px] lg:w-52 bg-zinc-900 border border-zinc-800 p-3 sm:p-4 rounded-xl flex flex-col justify-between select-none shadow-md">
-          <div class="space-y-4">
-            <!-- Score & High Score -->
-            <div class="space-y-2 pb-3 border-b border-zinc-800">
-              <div>
-                <div class="text-[10px] tracking-wider text-zinc-400 uppercase font-mono">ĐIỂM (SCORE)</div>
-                <div id="scoreVal" class="text-xl font-bold font-mono tabular-nums text-amber-400">000000</div>
+        <aside class="w-full max-w-[520px] lg:w-56 bg-zinc-900 border border-zinc-800 p-3 sm:p-4 rounded-xl flex flex-col justify-between select-none shadow-md">
+          <div class="space-y-4 font-mono">
+            <!-- Room & Role Info -->
+            <div class="p-2.5 bg-zinc-950 rounded-lg border border-zinc-800 space-y-1.5 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-500 uppercase text-[10px]">CHẾ ĐỘ:</span>
+                <span id="hudModeName" class="font-bold text-amber-400">CHƠI ĐƠN</span>
               </div>
-              <div>
-                <div class="text-[10px] tracking-wider text-zinc-500 uppercase font-mono">KỶ LỤC (HI-SCORE)</div>
-                <div id="hiScoreVal" class="text-sm font-semibold font-mono tabular-nums text-zinc-300">000000</div>
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-500 uppercase text-[10px]">BẠN ĐIỀU KHIỂN:</span>
+                <span id="hudMyRole" class="font-bold text-amber-300 flex items-center gap-1">
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> P1 Vàng
+                </span>
+              </div>
+              <div id="hudPeerStatusRow" class="hidden flex items-center justify-between pt-1 border-t border-zinc-800/80">
+                <span class="text-zinc-500 uppercase text-[10px]">ĐỒNG ĐỘI (P2):</span>
+                <span id="hudP2Status" class="text-zinc-400 text-[11px]">Đang chờ...</span>
               </div>
             </div>
 
-            <!-- Player Lives -->
-            <div class="pb-3 border-b border-zinc-800">
-              <div class="text-[10px] tracking-wider text-zinc-400 uppercase font-mono mb-1.5 flex items-center gap-1.5">
-                <span class="text-amber-500 font-bold">I-P</span>
-                <span>MẠNG CÒN LẠI</span>
+            <!-- Score & High Score -->
+            <div class="space-y-2 pb-3 border-b border-zinc-800">
+              <div>
+                <div class="text-[10px] tracking-wider text-zinc-400 uppercase">ĐIỂM CHUNG (SCORE)</div>
+                <div id="scoreVal" class="text-xl font-bold tabular-nums text-amber-400">000000</div>
               </div>
-              <div class="flex items-center gap-2">
-                <div class="w-6 h-6 bg-amber-500 rounded-sm flex items-center justify-center text-zinc-950 font-bold text-xs shadow-inner">
-                  ▲
+              <div>
+                <div class="text-[10px] tracking-wider text-zinc-500 uppercase">KỶ LỤC (HI-SCORE)</div>
+                <div id="hiScoreVal" class="text-sm font-semibold tabular-nums text-zinc-300">000000</div>
+              </div>
+            </div>
+
+            <!-- Shared Player Lives -->
+            <div class="pb-3 border-b border-zinc-800">
+              <div class="text-[10px] tracking-wider text-zinc-400 uppercase mb-2 flex items-center justify-between">
+                <span>MẠNG CHUNG CẢ PHÒNG</span>
+                <span class="text-amber-500 font-bold">CO-OP</span>
+              </div>
+              <div class="flex items-center justify-between bg-zinc-950 p-2 rounded-lg border border-zinc-800">
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center -space-x-1">
+                    <div class="w-5 h-5 bg-amber-500 rounded-sm flex items-center justify-center text-zinc-950 font-bold text-[10px] shadow-sm">
+                      ▲
+                    </div>
+                    <div class="w-5 h-5 bg-emerald-500 rounded-sm flex items-center justify-center text-zinc-950 font-bold text-[10px] shadow-sm">
+                      ▲
+                    </div>
+                  </div>
+                  <span class="text-xs text-zinc-400">P1 + P2</span>
                 </div>
-                <span class="text-lg font-bold font-mono tabular-nums text-white">
+                <span class="text-xl font-black tabular-nums text-white">
                   × <span id="livesVal">3</span>
                 </span>
               </div>
@@ -280,24 +420,24 @@
 
             <!-- Enemy Reserve Radar -->
             <div class="pb-3 border-b border-zinc-800">
-              <div class="flex items-center justify-between text-[10px] tracking-wider text-zinc-400 uppercase font-mono mb-2">
+              <div class="flex items-center justify-between text-[10px] tracking-wider text-zinc-400 uppercase mb-2">
                 <span>QUÂN ĐỊCH CÒN:</span>
                 <span id="remainingCount" class="font-bold text-red-400 tabular-nums">20</span>
               </div>
-              <div id="enemySlotsGrid" class="grid grid-cols-5 gap-1.5 max-w-[170px]">
+              <div id="enemySlotsGrid" class="grid grid-cols-5 gap-1.5 max-w-[180px]">
                 <!-- Dynamically populated 20 enemy icons -->
               </div>
             </div>
 
             <!-- Stage Flag -->
             <div class="pt-1">
-              <div class="text-[10px] tracking-wider text-zinc-400 uppercase font-mono mb-1 flex items-center gap-1.5">
+              <div class="text-[10px] tracking-wider text-zinc-400 uppercase mb-1 flex items-center gap-1.5">
                 <span>🚩</span>
                 <span>MÀN CHƠI</span>
               </div>
               <div class="flex items-baseline gap-2">
-                <span class="text-2xl font-black font-mono text-emerald-400">STAGE</span>
-                <span id="stageBadge" class="text-2xl font-black font-mono text-white tabular-nums">1</span>
+                <span class="text-2xl font-black text-emerald-400">STAGE</span>
+                <span id="stageBadge" class="text-2xl font-black text-white tabular-nums">1</span>
               </div>
             </div>
           </div>
@@ -308,7 +448,7 @@
       <div id="helpModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
         <div class="max-w-lg w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-6 shadow-2xl space-y-4">
           <div class="flex items-center justify-between pb-2 border-b border-zinc-800">
-            <h3 class="font-mono font-bold text-base text-amber-400">HƯỚNG DẪN BẮN XE TĂNG</h3>
+            <h3 class="font-mono font-bold text-base text-amber-400">HƯỚNG DẪN BẮN XE TĂNG 2 NGƯỜI</h3>
             <button id="btnHelpClose" class="text-zinc-400 hover:text-white font-mono text-sm cursor-pointer">
               ✕ Đóng
             </button>
@@ -316,34 +456,35 @@
 
           <div class="space-y-3 text-xs font-mono text-zinc-300 leading-relaxed">
             <div>
-              <strong class="text-white">1. Mục Tiêu Tối Thượng:</strong>
+              <strong class="text-amber-300">1. Chơi 2 Người Cùng Phe (Real-time Co-op P2P):</strong>
               <p class="text-zinc-400 mt-0.5">
-                Bảo vệ Nhà Đại Bản Doanh mang hình tượng "Con Đại Bàng" ở trung tâm phía dưới bản đồ. Nếu đại bàng bị đạn bắn trúng, trò chơi lập tức Game Over!
+                • <strong>Người tạo phòng (Host)</strong>: Điều khiển Xe Tăng 1 (Màu Vàng). Tạo phòng sẽ sinh mã 4 số, gửi mã này cho bạn bè.<br />
+                • <strong>Người vào phòng (Join)</strong>: Điều khiển Xe Tăng 2 (Màu Xanh). Nhập mã 4 số để kết nối P2P tức thì qua PeerJS!<br />
+                • Cả hai người cùng chung nhiệm vụ bảo vệ Đại Bản Doanh, dùng chung số mạng và điểm số!
               </p>
             </div>
             <div>
-              <strong class="text-white">2. Quy Tắc Bắn Đạn:</strong>
+              <strong class="text-white">2. Quy Tắc Bắn Đạn & Hồi Sinh:</strong>
               <p class="text-zinc-400 mt-0.5">
-                Tại mỗi thời điểm, xe người chơi chỉ được bắn đúng 1 viên đạn trên sân. Chỉ khi đạn chạm mục tiêu phát nổ, bạn mới có thể bắn tiếp viên thứ hai!
+                • Mỗi xe tăng được bắn 1 viên đạn trên sân cùng lúc. Hai đồng đội không bắn nổ nhau (miễn nhiễm hỏa lực thân thiện).<br />
+                • Khi một xe bị hạ, nếu phòng còn mạng chung, xe đó sẽ hồi sinh sau 2 giây với khiên bất tử tạm thời.
               </p>
             </div>
             <div>
-              <strong class="text-white">3. Tương Tác Địa Hình:</strong>
+              <strong class="text-white">3. Tương Tác Địa Hình & Vật Phẩm:</strong>
               <p class="text-zinc-400 mt-0.5">
-                • Tường gạch đỏ: Bắn là vỡ thành đường đi.<br />
-                • Tường thép xám: Đạn nảy tắt, không thể phá hủy bằng đạn thường.<br />
-                • Bụi cây xanh: Xe tăng có thể đi xuyên và ẩn nấp phục kích.<br />
-                • Mặt nước: Đạn bay qua được, xe tăng không thể vượt qua.
+                • 🧱 Tường gạch: Bắn vỡ thành đường đi.<br />
+                • 🏢 Tường thép: Bắn không vỡ.<br />
+                • 🌲 Bụi cây: Đi xuyên ẩn nấp.<br />
+                • 🌊 Mặt nước: Đạn bay qua được, xe không qua được.<br />
+                • ⛏️ Xẻng (thép bảo vệ căn cứ 10s), ★ Ngôi sao (tăng tốc đạn), 💣 Lựu đạn (bùm sạch địch trên sân), 🛡️ Khiên (bất tử 5s).
               </p>
             </div>
             <div>
-              <strong class="text-white">4. Vật Phẩm Ngẫu Nhiên (Power-ups):</strong>
+              <strong class="text-emerald-400">4. Điều Kiện Thắng / Thua:</strong>
               <p class="text-zinc-400 mt-0.5">
-                Khi tiêu diệt xe tăng địch màu đỏ nhấp nháy, sẽ rơi ngẫu nhiên 1 trong 4 vật phẩm:<br />
-                • ⛏️ <strong>Xẻng</strong>: Tạm thời biến toàn bộ tường quanh nhà Đại Bàng thành tường thép trong 10 giây!<br />
-                • ★ <strong>Ngôi sao</strong>: Tăng tốc độ bay của viên đạn người chơi.<br />
-                • 💣 <strong>Lựu đạn</strong>: Bùm nổ tung diệt sạch toàn bộ xe tăng địch trên màn hình!<br />
-                • 🛡️ <strong>Cái khiên</strong>: Kích hoạt khiên bất tử hoàn toàn trong 5 giây.
+                • Tiêu diệt đủ 20 xe địch: <strong>"Cao  đã đấm Huế thành công"</strong>.<br />
+                • Nhà Đại Bàng bị phá hủy hoặc hết sạch mạng: <strong>"Bạn ngu vãi cả loz"</strong>.
               </p>
             </div>
           </div>
