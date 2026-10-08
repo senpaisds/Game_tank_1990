@@ -2232,18 +2232,31 @@ class NetworkManager {
   createRoom(roomCode) {
     this.cleanup();
     this.isHost = true;
-    this.roomCode = roomCode;
-    this.peerId = `bcity-${roomCode}`;
+    this.roomCode = roomCode || Math.floor(1000 + Math.random() * 9000).toString();
+    this.peerId = this.roomCode;
 
-    this.onStatusChange('connecting', 'Đang kết nối tới máy chủ PeerJS...');
+    this.onStatusChange('connecting', 'Đang khởi tạo mã phòng...');
 
     try {
-      this.peer = new Peer(this.peerId, {
+      // Configuration connecting to PeerJS cloud server securely on HTTPS/GitHub Pages
+      const peerConfig = {
+        host: '0.peerjs.com',
+        port: 443,
+        path: '/',
+        secure: true,
         debug: 1,
-      });
+      };
+
+      this.peer = new Peer(this.peerId, peerConfig);
 
       this.peer.on('open', (id) => {
-        this.onStatusChange('ready', `Phòng ${roomCode} đã sẵn sàng! Chờ Người chơi 2...`);
+        console.log('Peer open successfully with ID:', id);
+        this.roomCode = id;
+        this.peerId = id;
+        if (roomCodeDisplay) {
+          roomCodeDisplay.textContent = id;
+        }
+        this.onStatusChange('ready', 'Sẵn sàng');
       });
 
       this.peer.on('connection', (conn) => {
@@ -2256,36 +2269,46 @@ class NetworkManager {
       });
 
       this.peer.on('error', (err) => {
-        console.warn('Peer error:', err);
+        console.error('Peer error:', err);
+        const errType = err && err.type ? err.type : (err && err.message ? err.message : 'Lỗi kết nối mạng');
         if (err.type === 'unavailable-id') {
-          // If code collided, generate another code automatically
+          // If code is already taken, regenerate a new 4-digit code
           const newCode = Math.floor(1000 + Math.random() * 9000).toString();
+          if (roomCodeDisplay) {
+            roomCodeDisplay.textContent = newCode;
+          }
           this.createRoom(newCode);
         } else {
-          this.onStatusChange('error', `Lỗi mạng: ${err.type || 'Không xác định'}`);
+          this.onStatusChange('error', `Lỗi kết nối: ${errType}`);
         }
       });
     } catch (e) {
-      this.onStatusChange('error', 'Không thể khởi tạo PeerJS');
+      console.error('PeerJS init failed:', e);
+      this.onStatusChange('error', `Không thể khởi tạo Peer: ${e.message || 'Lỗi mạng'}`);
     }
   }
 
   joinRoom(roomCode) {
     this.cleanup();
     this.isHost = false;
-    this.roomCode = roomCode.trim().toUpperCase();
-    const targetPeerId = this.roomCode.startsWith('BCITY-') || this.roomCode.startsWith('bcity-')
-      ? this.roomCode.toLowerCase()
-      : `bcity-${this.roomCode.toLowerCase()}`;
+    this.roomCode = (roomCode || '').trim();
+    const targetPeerId = this.roomCode;
 
-    this.onStatusChange('connecting', `Đang tìm phòng [${this.roomCode}]...`);
+    this.onStatusChange('connecting', `Đang kết nối tới phòng [${this.roomCode}]...`);
 
     try {
-      this.peer = new Peer({
+      const peerConfig = {
+        host: '0.peerjs.com',
+        port: 443,
+        path: '/',
+        secure: true,
         debug: 1,
-      });
+      };
+
+      this.peer = new Peer(peerConfig);
 
       this.peer.on('open', (myId) => {
+        console.log('Client peer opened with ID:', myId, 'Connecting to:', targetPeerId);
         this.conn = this.peer.connect(targetPeerId, {
           reliable: true,
         });
@@ -2295,16 +2318,19 @@ class NetworkManager {
         // Timeout check if host does not respond
         setTimeout(() => {
           if (!this.isConnected) {
-            this.onStatusChange('error', `Không tìm thấy phòng [${this.roomCode}]. Kiểm tra lại mã số!`);
+            this.onStatusChange('error', `Không tìm thấy phòng [${this.roomCode}]. Hãy kiểm tra lại mã!`);
           }
-        }, 8000);
+        }, 9000);
       });
 
       this.peer.on('error', (err) => {
-        this.onStatusChange('error', `Lỗi kết nối: ${err.type || 'Không tìm thấy phòng'}`);
+        console.error('Peer join error:', err);
+        const errType = err && err.type ? err.type : (err && err.message ? err.message : 'Lỗi kết nối');
+        this.onStatusChange('error', `Lỗi kết nối: ${errType}`);
       });
     } catch (e) {
-      this.onStatusChange('error', 'Không thể kết nối');
+      console.error('Peer connect failed:', e);
+      this.onStatusChange('error', `Không thể kết nối: ${e.message || 'Lỗi mạng'}`);
     }
   }
 
