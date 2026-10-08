@@ -466,11 +466,11 @@ class GameRenderer {
       });
     }
 
-    if (player1 && player1.health > 0) {
+    if (player1 && (player1.health === undefined || player1.health > 0)) {
       this.drawTank(ctx, player1, S);
     }
 
-    if (player2 && player2.health > 0) {
+    if (player2 && (player2.health === undefined || player2.health > 0)) {
       this.drawTank(ctx, player2, S);
     }
 
@@ -783,9 +783,9 @@ class GameRenderer {
     let trackBase = '#18181b';
     let trackLink = '#fde047';
 
-    const pIdx = tank.playerIndex || (tank.id === 'player2' ? 2 : 1);
+    const pIdx = tank.playerIndex || (tank.id === 'player2' ? 2 : (tank.color === '#22c55e' ? 2 : 1));
 
-    if (tank.isPlayer) {
+    if (tank.isPlayer || pIdx === 1 || pIdx === 2) {
       if (pIdx === 2) {
         // Player 2: Army Green palette
         hullBase = '#166534';
@@ -2249,14 +2249,22 @@ class NetworkManager {
 
       this.peer = new Peer(this.peerId, peerConfig);
 
-      this.peer.on('open', (id) => {
-        console.log('Peer open successfully with ID:', id);
-        this.roomCode = id;
-        this.peerId = id;
-        if (roomCodeDisplay) {
-          roomCodeDisplay.textContent = id;
+      const self = this;
+      this.peer.on('open', function(id) {
+        console.log('Đã nhận mã phòng thành công từ Cloud PeerJS:', id);
+        const textDisplay = document.getElementById('room-id-display');
+        if (textDisplay) {
+          textDisplay.innerText = id; // Thay thế chuỗi '----' bằng số ID thực tế
         }
-        this.onStatusChange('ready', 'Sẵn sàng');
+        // Tìm thẻ thông báo trạng thái "Đang khởi tạo..." và đổi chữ nó thành "🟢 Sẵn sàng!"
+        const statusDisplay = document.querySelector('.status-text') || document.getElementById('status-message');
+        if (statusDisplay) {
+          statusDisplay.innerHTML = '🟢 Máy chủ sảnh chờ đã sẵn sàng!';
+        }
+
+        self.roomCode = id;
+        self.peerId = id;
+        self.onStatusChange('ready', '🟢 Máy chủ sảnh chờ đã sẵn sàng!');
       });
 
       this.peer.on('connection', (conn) => {
@@ -2274,8 +2282,9 @@ class NetworkManager {
         if (err.type === 'unavailable-id') {
           // If code is already taken, regenerate a new 4-digit code
           const newCode = Math.floor(1000 + Math.random() * 9000).toString();
-          if (roomCodeDisplay) {
-            roomCodeDisplay.textContent = newCode;
+          const textDisplay = document.getElementById('room-id-display');
+          if (textDisplay) {
+            textDisplay.innerText = '----';
           }
           this.createRoom(newCode);
         } else {
@@ -2348,16 +2357,48 @@ class NetworkManager {
 
     this.conn.on('data', (data) => {
       if (!data) return;
-      if (data.type === 'SYNC') {
+      if (data.type === 'UPDATE_GAME_STATE' || data.type === 'SYNC') {
         this.onSyncReceived(data);
+      } else if (data.type === 'START_GAME') {
+        if (!this.isHost) {
+          startGame(data.stage || selectedStage, false);
+        }
+      } else if (data.type === 'MOVE') {
+        if (this.isHost) {
+          handleHostReceiveMove(data.direction);
+        }
+      } else if (data.type === 'FIRE') {
+        if (this.isHost) {
+          handleHostReceiveFire();
+        }
+      } else if (data.type === 'FIRE_RELEASE') {
+        if (this.isHost) {
+          if (window.p2RemoteInput) window.p2RemoteInput.fire = false;
+        }
+      } else if (data.type === 'STOP') {
+        if (this.isHost) {
+          handleHostReceiveMove('STOP');
+        }
       } else if (data.type === 'P2_INPUT') {
         if (this.isHost) {
           window.p2RemoteInput = data.input;
+          if (window.engine && window.engine.player2) {
+            if (data.input.up) window.engine.player2.direction = 'UP';
+            else if (data.input.down) window.engine.player2.direction = 'DOWN';
+            else if (data.input.left) window.engine.player2.direction = 'LEFT';
+            else if (data.input.right) window.engine.player2.direction = 'RIGHT';
+          }
         }
       } else if (data.type === 'RESTART_STAGE') {
         if (window.engine) {
           window.engine.initStage(data.stage || window.engine.stats.stage, true);
         }
+        gameState = 'PLAYING';
+        isPaused = false;
+        if (titleScreenEl) titleScreenEl.classList.add('hidden');
+        if (gameOverModalEl) gameOverModalEl.classList.add('hidden');
+        if (pauseOverlayEl) pauseOverlayEl.classList.add('hidden');
+        updateUIStats();
       } else if (data.type === 'CHAT') {
         this.onChatMessage(data.text);
       }
@@ -2431,6 +2472,72 @@ window.p2RemoteInput = {
   fire: false,
 };
 
+function handleHostReceiveMove(direction) {
+  if (!window.p2RemoteInput) {
+    window.p2RemoteInput = { up: false, down: false, left: false, right: false, fire: false };
+  }
+  const dirUpper = (direction || '').toUpperCase();
+  if (dirUpper === 'UP') {
+    window.p2RemoteInput.up = true;
+    window.p2RemoteInput.down = false;
+    window.p2RemoteInput.left = false;
+    window.p2RemoteInput.right = false;
+    if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
+      window.engine.player2.direction = 'UP';
+      window.engine.moveTank(window.engine.player2, 0, -window.engine.player2.speed);
+      window.engine.player2.trackFrame = (window.engine.player2.trackFrame + 1) % 2;
+    }
+  } else if (dirUpper === 'DOWN') {
+    window.p2RemoteInput.up = false;
+    window.p2RemoteInput.down = true;
+    window.p2RemoteInput.left = false;
+    window.p2RemoteInput.right = false;
+    if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
+      window.engine.player2.direction = 'DOWN';
+      window.engine.moveTank(window.engine.player2, 0, window.engine.player2.speed);
+      window.engine.player2.trackFrame = (window.engine.player2.trackFrame + 1) % 2;
+    }
+  } else if (dirUpper === 'LEFT') {
+    window.p2RemoteInput.up = false;
+    window.p2RemoteInput.down = false;
+    window.p2RemoteInput.left = true;
+    window.p2RemoteInput.right = false;
+    if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
+      window.engine.player2.direction = 'LEFT';
+      window.engine.moveTank(window.engine.player2, -window.engine.player2.speed, 0);
+      window.engine.player2.trackFrame = (window.engine.player2.trackFrame + 1) % 2;
+    }
+  } else if (dirUpper === 'RIGHT') {
+    window.p2RemoteInput.up = false;
+    window.p2RemoteInput.down = false;
+    window.p2RemoteInput.left = false;
+    window.p2RemoteInput.right = true;
+    if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
+      window.engine.player2.direction = 'RIGHT';
+      window.engine.moveTank(window.engine.player2, window.engine.player2.speed, 0);
+      window.engine.player2.trackFrame = (window.engine.player2.trackFrame + 1) % 2;
+    }
+  } else if (dirUpper === 'STOP' || dirUpper === 'NONE' || !dirUpper) {
+    window.p2RemoteInput.up = false;
+    window.p2RemoteInput.down = false;
+    window.p2RemoteInput.left = false;
+    window.p2RemoteInput.right = false;
+  }
+}
+
+function handleHostReceiveFire() {
+  if (!window.p2RemoteInput) {
+    window.p2RemoteInput = { up: false, down: false, left: false, right: false, fire: false };
+  }
+  window.p2RemoteInput.fire = true;
+  if (window.engine && window.engine.player2 && window.engine.player2.health > 0) {
+    const p2Bullets = window.engine.bullets.filter(b => b.shooterId === 'player2').length;
+    if (p2Bullets === 0) {
+      window.engine.fireBullet(window.engine.player2);
+    }
+  }
+}
+
 // UI Elements references
 let canvas, ctx;
 let titleScreenEl, gameOverModalEl, helpModalEl, pauseOverlayEl;
@@ -2489,12 +2596,12 @@ function initGameApp() {
   panelJoin = document.getElementById('panelJoin');
   panelSolo = document.getElementById('panelSolo');
 
-  roomCodeDisplay = document.getElementById('roomCodeDisplay');
+  roomCodeDisplay = document.getElementById('room-id-display') || document.getElementById('roomCodeDisplay');
   btnCopyCode = document.getElementById('btnCopyCode');
   copyIcon = document.getElementById('copyIcon');
   copyText = document.getElementById('copyText');
   hostStatusDot = document.getElementById('hostStatusDot');
-  hostStatusMsg = document.getElementById('hostStatusMsg');
+  hostStatusMsg = document.getElementById('status-message') || document.getElementById('hostStatusMsg');
   btnHostStart = document.getElementById('btnHostStart');
 
   inputJoinCode = document.getElementById('inputJoinCode');
@@ -2538,8 +2645,13 @@ function initGameApp() {
 
 function generateHostRoomCode() {
   const code = Math.floor(1000 + Math.random() * 9000).toString();
-  if (roomCodeDisplay) {
-    roomCodeDisplay.textContent = code;
+  const textDisplay = document.getElementById('room-id-display') || roomCodeDisplay;
+  if (textDisplay) {
+    textDisplay.innerText = '----';
+  }
+  const statusDisplay = document.querySelector('.status-text') || document.getElementById('status-message');
+  if (statusDisplay) {
+    statusDisplay.innerHTML = 'Đang khởi tạo mã phòng...';
   }
   netManager.createRoom(code);
 }
@@ -2598,23 +2710,90 @@ function handlePeerConnected(isHost) {
 
 function handleSyncReceived(data) {
   // Client updates its local view from Host's authoritative state
-  if (!engine) return;
+  if (!engine || !data) return;
+
+  // Auto transition to playing screen if Host has started game
+  if (gameState !== 'PLAYING' && !data.isGameOver && !data.isVictory) {
+    gameState = 'PLAYING';
+    if (titleScreenEl) titleScreenEl.classList.add('hidden');
+    if (gameOverModalEl) gameOverModalEl.classList.add('hidden');
+    if (pauseOverlayEl) pauseOverlayEl.classList.add('hidden');
+  }
 
   if (data.map) engine.map = data.map;
   if (data.stats) {
     engine.stats = data.stats;
   }
-  if (data.player1) engine.player1 = data.player1;
-  if (data.player2) engine.player2 = data.player2;
-  if (data.enemies) engine.enemies = data.enemies;
-  if (data.bullets) engine.bullets = data.bullets;
+
+  // Authoritative Player 1 Sync
+  if (data.player1) {
+    if (!engine.player1) engine.spawnPlayer(1);
+    engine.player1.x = data.player1.x;
+    engine.player1.y = data.player1.y;
+    engine.player1.direction = data.player1.direction;
+    engine.player1.health = data.player1.health !== undefined ? data.player1.health : 1;
+    engine.player1.shieldTime = data.player1.shieldTime || 0;
+    engine.player1.trackFrame = data.player1.trackFrame || 0;
+    engine.player1.isPlayer = true;
+    engine.player1.playerIndex = 1;
+    engine.player1.color = data.player1.color || '#eab308';
+  } else {
+    engine.player1 = null;
+  }
+
+  // Authoritative Player 2 Sync
+  if (data.player2) {
+    if (!engine.player2) engine.spawnPlayer(2);
+    engine.player2.x = data.player2.x;
+    engine.player2.y = data.player2.y;
+    engine.player2.direction = data.player2.direction;
+    engine.player2.health = data.player2.health !== undefined ? data.player2.health : 1;
+    engine.player2.shieldTime = data.player2.shieldTime || 0;
+    engine.player2.trackFrame = data.player2.trackFrame || 0;
+    engine.player2.isPlayer = true;
+    engine.player2.playerIndex = 2;
+    engine.player2.color = data.player2.color || '#22c55e';
+  } else {
+    engine.player2 = null;
+  }
+
+  // Authoritative Enemies Sync
+  if (data.enemies) {
+    engine.enemies = data.enemies.map(e => ({
+      id: e.id || `enemy_${Math.random()}`,
+      x: e.x,
+      y: e.y,
+      direction: e.direction || 'DOWN',
+      type: e.type || 'BASIC',
+      health: e.health !== undefined ? e.health : 1,
+      maxHealth: e.maxHealth || 1,
+      trackFrame: e.trackFrame || 0,
+      hasItem: !!e.hasItem,
+      color: e.color || '#ef4444',
+      isPlayer: false
+    }));
+  }
+
+  // Authoritative Bullets Sync
+  if (data.bullets) {
+    engine.bullets = data.bullets.map(b => ({
+      id: b.id || `bullet_${Math.random()}`,
+      x: b.x,
+      y: b.y,
+      direction: b.direction || 'UP',
+      owner: b.owner || 'ENEMY',
+      shooterId: b.shooterId,
+      power: b.power || 1
+    }));
+  }
+
   if (data.explosions) engine.explosions = data.explosions;
   if (data.powerUps) engine.powerUps = data.powerUps;
   if (data.spawnEffects) engine.spawnEffects = data.spawnEffects;
   if (data.floatingTexts) engine.floatingTexts = data.floatingTexts;
 
-  engine.isGameOver = data.isGameOver;
-  engine.isVictory = data.isVictory;
+  if (data.isGameOver !== undefined) engine.isGameOver = data.isGameOver;
+  if (data.isVictory !== undefined) engine.isVictory = data.isVictory;
 
   if (engine.isGameOver && gameState !== 'GAME_OVER') {
     gameState = 'GAME_OVER';
@@ -2813,17 +2992,57 @@ function gameLoop() {
         const p2Input = netManager.isConnected ? window.p2RemoteInput : null;
         engine.update(p1Input, p2Input);
 
-        // Broadcast state sync to Client every 2 frames (~30fps) for crisp latency
+        // Broadcast authoritative game state continuously to Player 2
         frameCount++;
-        if (netManager.isConnected && frameCount % 2 === 0) {
-          netManager.send({
-            type: 'SYNC',
-            stats: engine.stats,
+        if (netManager.conn && netManager.conn.open) {
+          netManager.conn.send({
+            type: 'UPDATE_GAME_STATE',
+            player1: engine.player1 ? {
+              x: engine.player1.x,
+              y: engine.player1.y,
+              direction: engine.player1.direction,
+              health: engine.player1.health !== undefined ? engine.player1.health : 1,
+              shieldTime: engine.player1.shieldTime || 0,
+              trackFrame: engine.player1.trackFrame || 0,
+              color: engine.player1.color || '#eab308',
+              isPlayer: true,
+              playerIndex: 1
+            } : null,
+            player2: engine.player2 ? {
+              x: engine.player2.x,
+              y: engine.player2.y,
+              direction: engine.player2.direction,
+              health: engine.player2.health !== undefined ? engine.player2.health : 1,
+              shieldTime: engine.player2.shieldTime || 0,
+              trackFrame: engine.player2.trackFrame || 0,
+              color: engine.player2.color || '#22c55e',
+              isPlayer: true,
+              playerIndex: 2
+            } : null,
+            enemies: engine.enemies.map(e => ({
+              id: e.id,
+              x: e.x,
+              y: e.y,
+              direction: e.direction,
+              type: e.type,
+              health: e.health !== undefined ? e.health : 1,
+              maxHealth: e.maxHealth || 1,
+              trackFrame: e.trackFrame || 0,
+              hasItem: e.hasItem || false,
+              color: e.color || '#ef4444',
+              isPlayer: false
+            })),
+            bullets: engine.bullets.map(b => ({
+              id: b.id,
+              x: b.x,
+              y: b.y,
+              direction: b.direction,
+              owner: b.owner,
+              shooterId: b.shooterId,
+              power: b.power || 1
+            })),
             map: engine.map,
-            player1: engine.player1,
-            player2: engine.player2,
-            enemies: engine.enemies,
-            bullets: engine.bullets,
+            stats: engine.stats,
             explosions: engine.explosions,
             powerUps: engine.powerUps,
             spawnEffects: engine.spawnEffects,
@@ -2841,7 +3060,12 @@ function gameLoop() {
           showGameOverModal(true);
         }
       } else if (userRole === 'JOIN') {
-        // Client Loop: send input to Host at 60fps
+        // Client Loop: continuous input stream to Host
+        if (localInput.up) netManager.send({ type: 'MOVE', direction: 'UP' });
+        else if (localInput.down) netManager.send({ type: 'MOVE', direction: 'DOWN' });
+        else if (localInput.left) netManager.send({ type: 'MOVE', direction: 'LEFT' });
+        else if (localInput.right) netManager.send({ type: 'MOVE', direction: 'RIGHT' });
+        if (localInput.fire) netManager.send({ type: 'FIRE' });
         netManager.send({
           type: 'P2_INPUT',
           input: localInput,
@@ -2877,25 +3101,63 @@ function gameLoop() {
 
 // Keyboard and Touch setup
 function setupEventListeners() {
+  const sendClientMoveOrStop = () => {
+    if (userRole === 'JOIN' && netManager && netManager.isConnected) {
+      if (localInput.up) netManager.send({ type: 'MOVE', direction: 'UP' });
+      else if (localInput.down) netManager.send({ type: 'MOVE', direction: 'DOWN' });
+      else if (localInput.left) netManager.send({ type: 'MOVE', direction: 'LEFT' });
+      else if (localInput.right) netManager.send({ type: 'MOVE', direction: 'RIGHT' });
+      else netManager.send({ type: 'MOVE', direction: 'STOP' });
+    }
+  };
+
   window.addEventListener('keydown', (e) => {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
       e.preventDefault();
     }
-    if (e.code === 'ArrowUp' || e.code === 'KeyW') localInput.up = true;
-    else if (e.code === 'ArrowDown' || e.code === 'KeyS') localInput.down = true;
-    else if (e.code === 'ArrowLeft' || e.code === 'KeyA') localInput.left = true;
-    else if (e.code === 'ArrowRight' || e.code === 'KeyD') localInput.right = true;
-    else if (e.code === 'Space') localInput.fire = true;
-    else if (e.code === 'KeyP') togglePause();
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+      localInput.up = true; localInput.down = false; localInput.left = false; localInput.right = false;
+      if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'UP' });
+    } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+      localInput.down = true; localInput.up = false; localInput.left = false; localInput.right = false;
+      if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'DOWN' });
+    } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+      localInput.left = true; localInput.right = false; localInput.up = false; localInput.down = false;
+      if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'LEFT' });
+    } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+      localInput.right = true; localInput.left = false; localInput.up = false; localInput.down = false;
+      if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'RIGHT' });
+    } else if (e.code === 'Space') {
+      if (!localInput.fire) {
+        localInput.fire = true;
+        if (userRole === 'JOIN') {
+          netManager.send({ type: 'FIRE' });
+          sounds.playShoot(2);
+        }
+      }
+    } else if (e.code === 'KeyP') togglePause();
     else if (e.code === 'KeyM') toggleMuteUI();
   });
 
   window.addEventListener('keyup', (e) => {
-    if (e.code === 'ArrowUp' || e.code === 'KeyW') localInput.up = false;
-    else if (e.code === 'ArrowDown' || e.code === 'KeyS') localInput.down = false;
-    else if (e.code === 'ArrowLeft' || e.code === 'KeyA') localInput.left = false;
-    else if (e.code === 'ArrowRight' || e.code === 'KeyD') localInput.right = false;
-    else if (e.code === 'Space') localInput.fire = false;
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+      localInput.up = false;
+      sendClientMoveOrStop();
+    } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+      localInput.down = false;
+      sendClientMoveOrStop();
+    } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+      localInput.left = false;
+      sendClientMoveOrStop();
+    } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+      localInput.right = false;
+      sendClientMoveOrStop();
+    } else if (e.code === 'Space') {
+      localInput.fire = false;
+      if (userRole === 'JOIN') {
+        netManager.send({ type: 'FIRE_RELEASE' });
+      }
+    }
   });
 
   // Touch Virtual Controls
@@ -2920,11 +3182,44 @@ function setupEventListeners() {
     });
   };
 
-  setupTouchBtn('btnTouchUp', () => { localInput.up = true; localInput.down = false; }, () => { localInput.up = false; });
-  setupTouchBtn('btnTouchDown', () => { localInput.down = true; localInput.up = false; }, () => { localInput.down = false; });
-  setupTouchBtn('btnTouchLeft', () => { localInput.left = true; localInput.right = false; }, () => { localInput.left = false; });
-  setupTouchBtn('btnTouchRight', () => { localInput.right = true; localInput.left = false; }, () => { localInput.right = false; });
-  setupTouchBtn('btnTouchFire', () => { localInput.fire = true; }, () => { localInput.fire = false; });
+  setupTouchBtn('btnTouchUp', () => {
+    localInput.up = true; localInput.down = false; localInput.left = false; localInput.right = false;
+    if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'UP' });
+  }, () => {
+    localInput.up = false;
+    sendClientMoveOrStop();
+  });
+  setupTouchBtn('btnTouchDown', () => {
+    localInput.down = true; localInput.up = false; localInput.left = false; localInput.right = false;
+    if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'DOWN' });
+  }, () => {
+    localInput.down = false;
+    sendClientMoveOrStop();
+  });
+  setupTouchBtn('btnTouchLeft', () => {
+    localInput.left = true; localInput.right = false; localInput.up = false; localInput.down = false;
+    if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'LEFT' });
+  }, () => {
+    localInput.left = false;
+    sendClientMoveOrStop();
+  });
+  setupTouchBtn('btnTouchRight', () => {
+    localInput.right = true; localInput.left = false; localInput.up = false; localInput.down = false;
+    if (userRole === 'JOIN') netManager.send({ type: 'MOVE', direction: 'RIGHT' });
+  }, () => {
+    localInput.right = false;
+    sendClientMoveOrStop();
+  });
+  setupTouchBtn('btnTouchFire', () => {
+    localInput.fire = true;
+    if (userRole === 'JOIN') {
+      netManager.send({ type: 'FIRE' });
+      sounds.playShoot(2);
+    }
+  }, () => {
+    localInput.fire = false;
+    if (userRole === 'JOIN') netManager.send({ type: 'FIRE_RELEASE' });
+  });
 
   // Tab switching
   const selectTab = (role) => {
@@ -2990,6 +3285,9 @@ function setupEventListeners() {
   if (btnHostStart) {
     btnHostStart.addEventListener('click', () => {
       userRole = 'HOST';
+      if (netManager.isConnected) {
+        netManager.send({ type: 'START_GAME', stage: selectedStage });
+      }
       startGame(selectedStage, true);
     });
   }
