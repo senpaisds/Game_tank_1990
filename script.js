@@ -16,6 +16,9 @@ const TileType = {
   WATER: 3,
   BUSH: 4,
   ICE: 5,
+  SAND: 6,      // Bãi cát lún: giảm tốc độ xe đi qua
+  LAVA: 7,      // Dòng dung nham rực lửa: xe không qua được, đạn bay qua được
+  BARRIER: 10,  // Khối rào điện/pha lê tím: cần đạn cấp cao (hoặc đạn xuyên) bắn 2 lần mới vỡ
   EAGLE_INTACT: 8,
   EAGLE_DESTROYED: 9,
 };
@@ -344,6 +347,13 @@ function getStage1Map() {
   fillBlock(map, 11, 12, 12, 13, TileType.STEEL);
   fillBlock(map, 11, 12, 0, 1, TileType.STEEL);
   fillBlock(map, 11, 12, 24, 25, TileType.STEEL);
+
+  // New obstacles in Stage 1: Quick-Sand zones and Crystal Barriers
+  fillBlock(map, 8, 8, 3, 5, TileType.SAND);
+  fillBlock(map, 8, 8, 20, 22, TileType.SAND);
+  fillBlock(map, 15, 15, 11, 14, TileType.SAND);
+  fillBlock(map, 13, 13, 12, 13, TileType.BARRIER);
+
   fillBlock(map, 22, 23, 6, 7, TileType.BRICK);
   fillBlock(map, 22, 23, 18, 19, TileType.BRICK);
   return map;
@@ -351,9 +361,13 @@ function getStage1Map() {
 
 function getStage2Map() {
   const map = createEmptyMap();
-  fillBlock(map, 12, 13, 0, 7, TileType.WATER);
+  fillBlock(map, 12, 13, 0, 5, TileType.WATER);
   fillBlock(map, 12, 13, 10, 15, TileType.WATER);
-  fillBlock(map, 12, 13, 18, 25, TileType.WATER);
+  fillBlock(map, 12, 13, 20, 25, TileType.WATER);
+  // Flowing Lava rivers across tactical paths
+  fillBlock(map, 12, 13, 6, 7, TileType.LAVA);
+  fillBlock(map, 12, 13, 18, 19, TileType.LAVA);
+
   fillBlock(map, 12, 13, 8, 9, TileType.BRICK);
   fillBlock(map, 12, 13, 16, 17, TileType.BRICK);
   fillBlock(map, 2, 5, 2, 5, TileType.BRICK);
@@ -364,6 +378,12 @@ function getStage2Map() {
   fillBlock(map, 16, 19, 10, 15, TileType.BUSH);
   fillBlock(map, 16, 19, 2, 3, TileType.STEEL);
   fillBlock(map, 16, 19, 22, 23, TileType.STEEL);
+
+  // Crystal Barrier checkpoints
+  fillBlock(map, 6, 6, 12, 13, TileType.BARRIER);
+  fillBlock(map, 14, 14, 3, 4, TileType.SAND);
+  fillBlock(map, 14, 14, 21, 22, TileType.SAND);
+
   fillBlock(map, 18, 21, 6, 7, TileType.BRICK);
   fillBlock(map, 18, 21, 18, 19, TileType.BRICK);
   return map;
@@ -378,10 +398,18 @@ function getStage3Map() {
   fillBlock(map, 7, 8, 17, 18, TileType.STEEL);
   fillBlock(map, 15, 16, 7, 8, TileType.STEEL);
   fillBlock(map, 15, 16, 17, 18, TileType.STEEL);
+
+  // Lava moats and Crystal Barriers
+  fillBlock(map, 10, 11, 7, 8, TileType.LAVA);
+  fillBlock(map, 10, 11, 17, 18, TileType.LAVA);
   fillBlock(map, 6, 10, 11, 14, TileType.BRICK);
+  fillBlock(map, 11, 11, 12, 13, TileType.BARRIER);
   fillBlock(map, 13, 17, 11, 14, TileType.BRICK);
   fillBlock(map, 9, 14, 5, 6, TileType.BRICK);
   fillBlock(map, 9, 14, 19, 20, TileType.BRICK);
+
+  fillBlock(map, 18, 19, 9, 10, TileType.SAND);
+  fillBlock(map, 18, 19, 15, 16, TileType.SAND);
   fillBlock(map, 20, 23, 2, 4, TileType.BUSH);
   fillBlock(map, 20, 23, 21, 23, TileType.BUSH);
   return map;
@@ -457,6 +485,12 @@ class GameRenderer {
             this.drawWater(ctx, x, y, S, waterFrame);
           } else if (tile === TileType.ICE) {
             this.drawIce(ctx, x, y, S);
+          } else if (tile === TileType.SAND) {
+            this.drawSand(ctx, x, y, S);
+          } else if (tile === TileType.LAVA) {
+            this.drawLava(ctx, x, y, S, waterFrame);
+          } else if (tile === TileType.BARRIER) {
+            this.drawBarrier(ctx, x, y, S);
           }
         }
       }
@@ -674,6 +708,74 @@ class GameRenderer {
     ctx.fillRect(px + 12, py + 10, 5, 3);
   }
 
+  drawSand(ctx, x, y, s) {
+    const px = Math.round(x);
+    const py = Math.round(y);
+    const ps = Math.round(s);
+
+    // Warm Desert Quicksand
+    ctx.fillStyle = '#d97706';
+    ctx.fillRect(px, py, ps, ps);
+
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(px + 1, py + 1, ps - 2, ps - 2);
+
+    ctx.fillStyle = '#b45309';
+    for (let i = 2; i < ps - 2; i += 4) {
+      for (let j = 2; j < ps - 2; j += 4) {
+        ctx.fillRect(px + i, py + j, 1.5, 1.5);
+      }
+    }
+    ctx.fillStyle = '#fde68a';
+    ctx.fillRect(px + 3, py + 4, 2, 1);
+    ctx.fillRect(px + 10, py + 12, 2, 1);
+  }
+
+  drawLava(ctx, x, y, s, frame = 0) {
+    const px = Math.round(x);
+    const py = Math.round(y);
+    const ps = Math.round(s);
+
+    // Scorching molten magma / lava
+    ctx.fillStyle = '#991b1b';
+    ctx.fillRect(px, py, ps, ps);
+
+    ctx.fillStyle = '#ea580c';
+    const shift = (frame % 4) * 3;
+    for (let i = 0; i < ps; i += 5) {
+      const lineY = py + ((i + shift) % ps);
+      ctx.fillRect(px + 1, lineY, ps - 2, 2);
+    }
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(px + 4, py + ((shift * 2) % (ps - 4)), 3, 3);
+    ctx.fillRect(px + 12, py + ((shift * 3) % (ps - 4)), 2, 2);
+  }
+
+  drawBarrier(ctx, x, y, s) {
+    const px = Math.round(x);
+    const py = Math.round(y);
+    const ps = Math.round(s);
+
+    // High-tech Violet Crystal Energy Barrier
+    ctx.fillStyle = '#581c87';
+    ctx.fillRect(px, py, ps, ps);
+
+    ctx.fillStyle = '#a855f7';
+    ctx.fillRect(px + 1, py + 1, ps - 2, ps - 2);
+
+    ctx.fillStyle = '#c084fc';
+    ctx.fillRect(px + 3, py + 3, ps - 6, ps - 6);
+
+    ctx.fillStyle = '#f3e8ff';
+    ctx.fillRect(px + 5, py + 5, ps - 10, ps - 10);
+
+    // Glowing energy nodes
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(px + 2, py + 2, 2, 2);
+    ctx.fillRect(px + ps - 4, py + ps - 4, 2, 2);
+  }
+
   drawBush(ctx, x, y, s) {
     const px = Math.round(x);
     const py = Math.round(y);
@@ -833,67 +935,71 @@ class GameRenderer {
         trackLink = '#fde047';
       }
     } else {
-      // Enemy Tanks
+      // Enemy Tanks: Distinct palettes strictly excluding player Yellow (#facc15/#eab308) and Green (#22c55e/#166534)
       if (tank.type === 'BASIC') {
         hullBase = '#475569';
-        hullHighlight = '#64748b';
-        hullShadow = '#334155';
+        hullHighlight = '#94a3b8';
+        hullShadow = '#1e293b';
         secondaryAccent = '#dc2626';
         secondaryLight = '#ef4444';
         turretBase = '#1e293b';
         turretTop = '#334155';
-        barrelBase = '#1e293b';
-        trackBase = '#0f172a';
+        barrelBase = '#0f172a';
+        trackBase = '#09090b';
         trackLink = '#94a3b8';
       } else if (tank.type === 'FAST') {
+        // High-speed Silver / Cyber-Cyan
         hullBase = '#334155';
-        hullHighlight = '#475569';
-        hullShadow = '#1e293b';
-        secondaryAccent = '#f87171';
-        secondaryLight = '#fca5a5';
-        turretBase = '#0f172a';
-        turretTop = '#1e293b';
+        hullHighlight = '#38bdf8';
+        hullShadow = '#0f172a';
+        secondaryAccent = '#0ea5e9';
+        secondaryLight = '#e0f2fe';
+        turretBase = '#1e293b';
+        turretTop = '#0284c7';
         barrelBase = '#0f172a';
         trackBase = '#020617';
-        trackLink = '#e2e8f0';
+        trackLink = '#7dd3fc';
       } else if (tank.type === 'POWER') {
-        hullBase = '#52525b';
-        hullHighlight = '#71717a';
-        hullShadow = '#27272a';
-        secondaryAccent = '#ef4444';
-        secondaryLight = '#f87171';
-        turretBase = '#27272a';
-        turretTop = '#3f3f46';
+        // Heavy Crimson / Dark Iron
+        hullBase = '#7f1d1d';
+        hullHighlight = '#ef4444';
+        hullShadow = '#450a0a';
+        secondaryAccent = '#f87171';
+        secondaryLight = '#fecaca';
+        turretBase = '#450a0a';
+        turretTop = '#991b1b';
         barrelBase = '#18181b';
         trackBase = '#09090b';
         trackLink = '#fca5a5';
       } else if (tank.type === 'ARMOR') {
+        // Multi-hit Heavy Armor: Red -> Magenta -> Violet -> Deep Purple (strictly no yellow/green)
         const hpPalettes = [
-          { hull: '#dc2626', turret: '#991b1b', accent: '#ffffff' },
-          { hull: '#ea580c', turret: '#9a3412', accent: '#fef08a' },
-          { hull: '#ca8a04', turret: '#854d0e', accent: '#ffffff' },
-          { hull: '#15803d', turret: '#14532d', accent: '#86efac' },
+          { hull: '#b91c1c', turret: '#7f1d1d', accent: '#fca5a5', highlight: '#fecaca' },
+          { hull: '#c026d3', turret: '#86198f', accent: '#f0abfc', highlight: '#fae8ff' },
+          { hull: '#7c3aed', turret: '#5b21b6', accent: '#c4b5fd', highlight: '#ede9fe' },
+          { hull: '#312e81', turret: '#1e1b4b', accent: '#818cf8', highlight: '#e0e7ff' },
         ];
         const p = hpPalettes[Math.max(0, Math.min(hpPalettes.length - 1, (tank.health || 1) - 1))];
         hullBase = p.hull;
-        hullHighlight = '#f8fafc';
-        hullShadow = '#0f172a';
+        hullHighlight = p.highlight;
+        hullShadow = '#09090b';
         secondaryAccent = p.accent;
         secondaryLight = '#ffffff';
         turretBase = p.turret;
-        turretTop = '#334155';
+        turretTop = p.turret;
         barrelBase = '#0f172a';
         trackBase = '#0f172a';
-        trackLink = '#f87171';
+        trackLink = p.accent;
       }
     }
 
-    // Special item-carrier enemy: flashing highlight
+    // Special item-carrier enemy: flashing bright Crimson Red & Pure White (never yellow or green)
     if (tank.hasItem && Math.floor(Date.now() / 150) % 2 === 0) {
       hullBase = '#dc2626';
-      hullHighlight = '#fef08a';
+      hullHighlight = '#ffffff';
       turretBase = '#ef4444';
       secondaryAccent = '#ffffff';
+      secondaryLight = '#ffffff';
     }
 
     const trackW = 6;
@@ -1203,6 +1309,21 @@ class GameRenderer {
     } else if (p.type === 'SHOVEL') {
       borderColor = '#94a3b8';
       bgColor = '#1e293b';
+    } else if (p.type === 'LASER') {
+      borderColor = '#c084fc';
+      bgColor = '#3b0764';
+    } else if (p.type === 'CLOCK') {
+      borderColor = '#38bdf8';
+      bgColor = '#082f49';
+    } else if (p.type === 'BOOTS') {
+      borderColor = '#f97316';
+      bgColor = '#431407';
+    } else if (p.type === 'GRENADE') {
+      borderColor = '#ec4899';
+      bgColor = '#500724';
+    } else if (p.type === 'EMP') {
+      borderColor = '#06b6d4';
+      bgColor = '#083344';
     }
 
     ctx.fillStyle = bgColor;
@@ -1223,9 +1344,85 @@ class GameRenderer {
       this.drawHelmetBadge(ctx, cx, cy);
     } else if (p.type === 'SHOVEL') {
       this.drawShovelBadge(ctx, cx, cy);
+    } else if (p.type === 'LASER') {
+      this.drawLaserBadge(ctx, cx, cy);
+    } else if (p.type === 'CLOCK') {
+      this.drawClockBadge(ctx, cx, cy);
+    } else if (p.type === 'BOOTS') {
+      this.drawBootsBadge(ctx, cx, cy);
+    } else if (p.type === 'GRENADE') {
+      this.drawGrenadeBadge(ctx, cx, cy);
+    } else if (p.type === 'EMP') {
+      this.drawEmpBadge(ctx, cx, cy);
     }
 
     ctx.restore();
+  }
+
+  drawLaserBadge(ctx, cx, cy) {
+    // Glowing beam/bolt
+    ctx.fillStyle = '#c084fc';
+    ctx.beginPath();
+    ctx.moveTo(cx + 2, cy - 8);
+    ctx.lineTo(cx - 5, cy + 1);
+    ctx.lineTo(cx - 1, cy + 1);
+    ctx.lineTo(cx - 3, cy + 8);
+    ctx.lineTo(cx + 5, cy - 1);
+    ctx.lineTo(cx + 1, cy - 1);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 1, cy - 2, 2, 4);
+  }
+
+  drawClockBadge(ctx, cx, cy) {
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 0.5, cy - 5, 1.5, 5);
+    ctx.fillRect(cx - 0.5, cy - 0.5, 4, 1.5);
+  }
+
+  drawBootsBadge(ctx, cx, cy) {
+    // Winged speed boots
+    ctx.fillStyle = '#fb923c';
+    ctx.fillRect(cx - 6, cy - 4, 5, 8);
+    ctx.fillRect(cx - 6, cy + 1, 10, 4);
+    ctx.fillStyle = '#fed7aa';
+    ctx.fillRect(cx - 1, cy - 7, 6, 3);
+    ctx.fillRect(cx + 1, cy - 4, 4, 3);
+  }
+
+  drawGrenadeBadge(ctx, cx, cy) {
+    ctx.fillStyle = '#f472b6';
+    ctx.beginPath();
+    ctx.arc(cx, cy + 1, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fda4af';
+    ctx.fillRect(cx - 2, cy - 7, 4, 3);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 1, cy - 1, 2, 2);
+  }
+
+  drawEmpBadge(ctx, cx, cy) {
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 8, -Math.PI / 3, Math.PI / 3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 8, (2 * Math.PI) / 3, (4 * Math.PI) / 3);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - 1, cy - 1, 2, 2);
   }
 
   drawStarBadge(ctx, cx, cy) {
@@ -1765,6 +1962,8 @@ class GameEngine {
 
     const pIdx = tank.playerIndex || (tank.id === 'player2' ? 2 : 1);
     const owner = tank.isPlayer ? (pIdx === 2 ? 'PLAYER_2' : 'PLAYER_1') : 'ENEMY';
+    const isLaser = tank.isPlayer && !!tank.hasLaser;
+    const bulletPower = tank.isPlayer ? (isLaser ? 3 : (tank.tier || 1)) : 1;
 
     this.bullets.push({
       id: `bullet_${Date.now()}_${Math.random()}`,
@@ -1774,7 +1973,9 @@ class GameEngine {
       speed: bSpeed,
       owner,
       shooterId: tank.id,
-      power: 1,
+      power: bulletPower,
+      tier: tank.tier || 1,
+      isLaser,
     });
 
     sounds.playShoot(tank.isPlayer ? pIdx : 0);
@@ -1836,6 +2037,8 @@ class GameEngine {
           tile === TileType.BRICK ||
           tile === TileType.STEEL ||
           tile === TileType.WATER ||
+          tile === TileType.LAVA ||
+          tile === TileType.BARRIER ||
           tile === TileType.EAGLE_INTACT ||
           tile === TileType.EAGLE_DESTROYED
         ) {
@@ -1891,6 +2094,21 @@ class GameEngine {
 
   moveTank(tank, dx, dy) {
     const s = this.tileSize;
+
+    // Check if tank is traversing Quicksand
+    const centerCol = Math.floor((tank.x + s) / s);
+    const centerRow = Math.floor((tank.y + s) / s);
+    let speedMult = 1.0;
+    if (
+      centerRow >= 0 && centerRow < MAP_SIZE &&
+      centerCol >= 0 && centerCol < MAP_SIZE &&
+      this.map[centerRow][centerCol] === TileType.SAND
+    ) {
+      speedMult = 0.55; // 45% speed penalty on quicksand
+    }
+    dx *= speedMult;
+    dy *= speedMult;
+
     const speed = Math.max(Math.abs(dx), Math.abs(dy));
     if (speed === 0) return false;
 
@@ -2040,7 +2258,7 @@ class GameEngine {
         continue;
       }
 
-      // Check tile grid collisions (Brick & Steel)
+      // Check tile grid collisions (Brick, Steel & Crystal Barrier)
       const hitTileCol = Math.floor(bullet.x / s);
       const hitTileRow = Math.floor(bullet.y / s);
 
@@ -2051,9 +2269,26 @@ class GameEngine {
           this.addExplosion(bullet.x, bullet.y, false);
           sounds.playBrickHit();
           continue;
+        } else if (tile === TileType.BARRIER) {
+          // Crystal Barrier: destroyed by powerful/piercing bullets or 2 regular hits
+          this.addExplosion(bullet.x, bullet.y, false);
+          sounds.playSteelHit();
+          if (bullet.power >= 2 || bullet.isLaser || (bullet.tier && bullet.tier >= 2)) {
+            this.map[hitTileRow][hitTileCol] = TileType.EMPTY;
+            this.addFloatingText('CRACK!', bullet.x, bullet.y, '#c084fc');
+          } else {
+            // Converts to cracked brick on first hit, then destroys on second
+            this.map[hitTileRow][hitTileCol] = TileType.BRICK;
+          }
+          continue;
         } else if (tile === TileType.STEEL) {
           this.addExplosion(bullet.x, bullet.y, false);
           sounds.playSteelHit();
+          // Tier 3 or Laser bullets can blast through Steel
+          if ((bullet.power >= 3 || bullet.isLaser || (bullet.tier && bullet.tier >= 3)) && isPlayerBullet) {
+            this.map[hitTileRow][hitTileCol] = TileType.EMPTY;
+            this.addFloatingText('BLAST!', bullet.x, bullet.y, '#ffffff');
+          }
           continue;
         }
       }
@@ -2199,7 +2434,8 @@ class GameEngine {
 
   spawnRandomPowerUp() {
     const s = this.tileSize;
-    const types = ['SHOVEL', 'STAR', 'BOMB', 'HELMET'];
+    // Diverse array of power-up items from flashing red enemies
+    const types = ['SHOVEL', 'STAR', 'BOMB', 'HELMET', 'LASER', 'CLOCK', 'BOOTS', 'GRENADE', 'EMP'];
     const type = types[Math.floor(Math.random() * types.length)];
 
     let px = Math.floor(2 + Math.random() * (MAP_SIZE - 4)) * s + s / 2;
@@ -2254,9 +2490,11 @@ class GameEngine {
   applyPowerUp(player, type) {
     if (type === 'HELMET') {
       player.shieldTime = 6.0;
+      this.addFloatingText('SHIELD!', player.x + this.tileSize, player.y, '#0ea5e9');
     } else if (type === 'STAR') {
       player.bulletSpeed = Math.min(8.5, player.bulletSpeed + 1.2);
       player.tier = Math.min(3, (player.tier || 1) + 1);
+      this.addFloatingText('STAR UP!', player.x + this.tileSize, player.y, '#facc15');
     } else if (type === 'BOMB') {
       for (const enemy of this.enemies) {
         this.addExplosion(enemy.x + this.tileSize, enemy.y + this.tileSize, true);
@@ -2265,9 +2503,48 @@ class GameEngine {
       }
       this.enemies = [];
       sounds.playExplosion(true);
+      this.addFloatingText('NUKE!', (MAP_SIZE * this.tileSize) / 2, (MAP_SIZE * this.tileSize) / 2, '#ef4444');
     } else if (type === 'SHOVEL') {
       this.shovelTime = 600; // 10 seconds of steel base
       setEagleFortress(this.map, TileType.STEEL);
+      this.addFloatingText('FORTIFIED!', 12 * this.tileSize, 23 * this.tileSize, '#94a3b8');
+    } else if (type === 'LASER') {
+      // Laser Cannon: blasts through Steel walls and Crystal Barriers!
+      player.hasLaser = true;
+      player.tier = 3;
+      player.bulletSpeed = 9.0;
+      this.addFloatingText('LASER CANNON!', player.x + this.tileSize, player.y, '#c084fc');
+    } else if (type === 'CLOCK') {
+      // Chrono Freeze: freezes all enemy tanks for 8 seconds
+      this.freezeTime = 480;
+      this.addFloatingText('FREEZE 8s!', (MAP_SIZE * this.tileSize) / 2, (MAP_SIZE * this.tileSize) / 2, '#38bdf8');
+    } else if (type === 'BOOTS') {
+      // Speed Boots: permanently or heavily buffs movement speed
+      player.speed = Math.min(3.6, player.speed + 0.6);
+      this.addFloatingText('SPEED UP!', player.x + this.tileSize, player.y, '#f97316');
+    } else if (type === 'GRENADE') {
+      // Sonic Grenade: Destroys all adjacent brick & barrier obstacles in a large perimeter
+      const s = this.tileSize;
+      const centerCol = Math.floor((player.x + s) / s);
+      const centerRow = Math.floor((player.y + s) / s);
+      for (let r = Math.max(0, centerRow - 3); r <= Math.min(MAP_SIZE - 1, centerRow + 3); r++) {
+        for (let c = Math.max(0, centerCol - 3); c <= Math.min(MAP_SIZE - 1, centerCol + 3); c++) {
+          if (this.map[r][c] === TileType.BRICK || this.map[r][c] === TileType.BARRIER) {
+            this.map[r][c] = TileType.EMPTY;
+            this.addExplosion(c * s + s / 2, r * s + s / 2, false);
+          }
+        }
+      }
+      this.addFloatingText('CLEAR PATH!', player.x + s, player.y, '#ec4899');
+    } else if (type === 'EMP') {
+      // EMP Wave: neutralizes all enemy bullets currently in flight & shatters enemy armor
+      this.bullets = this.bullets.filter(b => b.owner === 'PLAYER_1' || b.owner === 'PLAYER_2' || b.owner === 'PLAYER');
+      for (const e of this.enemies) {
+        if (e.health > 1) e.health = 1;
+        this.addExplosion(e.x + this.tileSize, e.y + this.tileSize, false);
+      }
+      sounds.playSteelHit();
+      this.addFloatingText('EMP PULSE!', (MAP_SIZE * this.tileSize) / 2, (MAP_SIZE * this.tileSize) / 2, '#06b6d4');
     }
   }
 
@@ -2563,8 +2840,6 @@ function handleHostReceiveMove(direction) {
     window.p2RemoteInput.right = false;
     if (isP2Alive) {
       p2.direction = 'UP';
-      window.engine.moveTank(p2, 0, -p2.speed);
-      p2.trackFrame = (p2.trackFrame + 1) % 2;
     }
   } else if (dirUpper === 'DOWN') {
     window.p2RemoteInput.up = false;
@@ -2573,8 +2848,6 @@ function handleHostReceiveMove(direction) {
     window.p2RemoteInput.right = false;
     if (isP2Alive) {
       p2.direction = 'DOWN';
-      window.engine.moveTank(p2, 0, p2.speed);
-      p2.trackFrame = (p2.trackFrame + 1) % 2;
     }
   } else if (dirUpper === 'LEFT') {
     window.p2RemoteInput.up = false;
@@ -2583,8 +2856,6 @@ function handleHostReceiveMove(direction) {
     window.p2RemoteInput.right = false;
     if (isP2Alive) {
       p2.direction = 'LEFT';
-      window.engine.moveTank(p2, -p2.speed, 0);
-      p2.trackFrame = (p2.trackFrame + 1) % 2;
     }
   } else if (dirUpper === 'RIGHT') {
     window.p2RemoteInput.up = false;
@@ -2593,8 +2864,6 @@ function handleHostReceiveMove(direction) {
     window.p2RemoteInput.right = true;
     if (isP2Alive) {
       p2.direction = 'RIGHT';
-      window.engine.moveTank(p2, p2.speed, 0);
-      p2.trackFrame = (p2.trackFrame + 1) % 2;
     }
   } else if (dirUpper === 'STOP' || dirUpper === 'NONE' || !dirUpper) {
     window.p2RemoteInput.up = false;
@@ -2820,6 +3089,9 @@ function handleSyncReceived(data) {
     engine.player1.isPlayer = true;
     engine.player1.playerIndex = 1;
     engine.player1.color = data.player1.color || '#eab308';
+    if (data.player1.speed) engine.player1.speed = data.player1.speed;
+    if (data.player1.tier) engine.player1.tier = data.player1.tier;
+    engine.player1.hasLaser = !!data.player1.hasLaser;
   } else {
     engine.player1 = null;
   }
@@ -2836,6 +3108,9 @@ function handleSyncReceived(data) {
     engine.player2.isPlayer = true;
     engine.player2.playerIndex = 2;
     engine.player2.color = data.player2.color || '#22c55e';
+    if (data.player2.speed) engine.player2.speed = data.player2.speed;
+    if (data.player2.tier) engine.player2.tier = data.player2.tier;
+    engine.player2.hasLaser = !!data.player2.hasLaser;
   } else {
     engine.player2 = null;
   }
@@ -3088,6 +3363,9 @@ function gameLoop() {
               shieldTime: engine.player1.shieldTime || 0,
               trackFrame: engine.player1.trackFrame || 0,
               color: engine.player1.color || '#eab308',
+              speed: engine.player1.speed || 2.2,
+              tier: engine.player1.tier || 1,
+              hasLaser: !!engine.player1.hasLaser,
               isPlayer: true,
               playerIndex: 1
             } : null,
@@ -3099,6 +3377,9 @@ function gameLoop() {
               shieldTime: engine.player2.shieldTime || 0,
               trackFrame: engine.player2.trackFrame || 0,
               color: engine.player2.color || '#22c55e',
+              speed: engine.player2.speed || 2.2,
+              tier: engine.player2.tier || 1,
+              hasLaser: !!engine.player2.hasLaser,
               isPlayer: true,
               playerIndex: 2
             } : null,
