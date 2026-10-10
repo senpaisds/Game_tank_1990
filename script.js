@@ -387,11 +387,32 @@ function getStage3Map() {
   return map;
 }
 
+function clearPlayerSpawnZones(map) {
+  // Clear P1 spawn zone: rows 23..25, cols 7..10
+  // Clear P2 spawn zone: rows 23..25, cols 15..18
+  for (let r = 23; r < MAP_SIZE; r++) {
+    for (let c = 7; c <= 10; c++) {
+      if (r < MAP_SIZE && c < MAP_SIZE) {
+        map[r][c] = TileType.EMPTY;
+      }
+    }
+    for (let c = 15; c <= 18; c++) {
+      if (r < MAP_SIZE && c < MAP_SIZE) {
+        map[r][c] = TileType.EMPTY;
+      }
+    }
+  }
+}
+
 function getStageMap(stage) {
   const normalized = ((stage - 1) % 3) + 1;
-  if (normalized === 1) return getStage1Map();
-  if (normalized === 2) return getStage2Map();
-  return getStage3Map();
+  let map;
+  if (normalized === 1) map = getStage1Map();
+  else if (normalized === 2) map = getStage2Map();
+  else map = getStage3Map();
+
+  clearPlayerSpawnZones(map);
+  return map;
 }
 
 // ==========================================
@@ -1347,9 +1368,17 @@ class GameEngine {
 
   setMultiplayerMode(enabled) {
     this.isMultiplayer = enabled;
-    if (enabled && !this.player2) {
-      this.spawnPlayer(2);
-    } else if (!enabled) {
+    if (enabled) {
+      if (!this.player2) {
+        this.spawnPlayer(2);
+      } else {
+        if (!this.canTankFitAt(this.player2, this.player2.x, this.player2.y)) {
+          this.player2.x = 16 * this.tileSize;
+          this.player2.y = 24 * this.tileSize;
+          this.unstuckTank(this.player2);
+        }
+      }
+    } else {
       this.player2 = null;
     }
   }
@@ -1408,7 +1437,7 @@ class GameEngine {
     const tank = {
       id: isP1 ? 'player1' : 'player2',
       playerIndex,
-      x: isP1 ? 8 * s : 14 * s,
+      x: isP1 ? 8 * s : 16 * s,
       y: 24 * s,
       direction: 'UP',
       speed: 2.2,
@@ -1431,6 +1460,8 @@ class GameEngine {
       this.player2 = tank;
       this.respawnTimerP2 = 0;
     }
+
+    this.unstuckTank(tank);
   }
 
   update(p1Input, p2Input = null) {
@@ -1527,6 +1558,11 @@ class GameEngine {
 
   updatePlayerTank(player, input, playerIndex) {
     if (!player || player.health <= 0) return;
+
+    // Unstuck safeguard: If tank overlaps any obstacle, gently nudge to nearest clear slot
+    if (!this.canTankFitAt(player, player.x, player.y)) {
+      this.unstuckTank(player);
+    }
 
     if (player.shieldTime > 0) {
       player.shieldTime = Math.max(0, player.shieldTime - 1 / 60);
@@ -1742,6 +1778,39 @@ class GameEngine {
     });
 
     sounds.playShoot(tank.isPlayer ? pIdx : 0);
+  }
+
+  unstuckTank(tank) {
+    if (!tank || tank.health <= 0) return;
+    if (this.canTankFitAt(tank, tank.x, tank.y)) return;
+
+    const s = this.tileSize;
+    const maxRadius = s * 4;
+    const step = 2;
+
+    for (let r = step; r <= maxRadius; r += step) {
+      // Prioritize right (away from eagle if on right side), then left, up, down
+      const offsets = [
+        { dx: r, dy: 0 },
+        { dx: -r, dy: 0 },
+        { dx: 0, dy: -r },
+        { dx: 0, dy: r },
+        { dx: r, dy: -r },
+        { dx: r, dy: r },
+        { dx: -r, dy: -r },
+        { dx: -r, dy: r },
+      ];
+
+      for (const { dx, dy } of offsets) {
+        const testX = tank.x + dx;
+        const testY = tank.y + dy;
+        if (this.canTankFitAt(tank, testX, testY)) {
+          tank.x = testX;
+          tank.y = testY;
+          return;
+        }
+      }
+    }
   }
 
   canTankFitAt(tank, testX, testY) {
@@ -2482,6 +2551,10 @@ function handleHostReceiveMove(direction) {
   const dirUpper = (direction || '').toUpperCase();
   const p2 = window.engine ? window.engine.player2 : null;
   const isP2Alive = p2 && (p2.health === undefined || p2.health > 0);
+
+  if (p2 && window.engine && !window.engine.canTankFitAt(p2, p2.x, p2.y)) {
+    window.engine.unstuckTank(p2);
+  }
 
   if (dirUpper === 'UP') {
     window.p2RemoteInput.up = true;
